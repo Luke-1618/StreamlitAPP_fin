@@ -5,10 +5,12 @@ import pandas as pd
 import numpy as np
 
 # Visualization
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import matplotlib.dates as mdates
 import plotly.express as px
 import seaborn as sns
+from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
 
 # Financial Data
 import yfinance as yf
@@ -19,11 +21,9 @@ from arch import arch_model
 # Statistical Tests and Metrics
 from scipy.stats import norm  # for probability calculations
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-import plotly.graph_objects as go
 
 import warnings
 warnings.filterwarnings("ignore")  # Ignore convergence warnings
-
 
 # Lightweight Charts (Web-Based Visualization)
 from plotly.subplots import make_subplots
@@ -242,16 +242,27 @@ if st.session_state.stock_list:
                         returns = stock_data['Return']
 
                         # ------------------------- Graph 1: Histogram of Returns -------------------------
-                        fig2, ax2 = plt.subplots(figsize=(10, 6))
-                        ax2.hist(returns.dropna(), bins=50, alpha=0.7, edgecolor='black')
-                        ax2.set_title(f'Distribution of Returns for {t}')
-                        ax2.set_xlabel('Return')
-                        ax2.set_ylabel('Frequency')
-                        ax2.grid(True)
-                        st.pyplot(fig2)
+                        fig2 = go.Figure()
+
+                        fig2.add_trace(go.Histogram(
+                            x=returns.dropna(),
+                            nbinsx=50,
+                            marker=dict(color='rgba(0, 123, 255, 0.7)', line=dict(color='black', width=1)),
+                            name='Returns'
+                        ))
+
+                        fig2.update_layout(
+                            title=f'Distribution of Returns for {t}',
+                            xaxis_title='Return',
+                            yaxis_title='Frequency',
+                            bargap=0.05,
+                            template='plotly_white'
+                        )
+
+                        st.plotly_chart(fig2, use_container_width=True)
 
 
-                        # ------------------------- Graph 2: Drawdown -------------------------
+                        # ------------------------- Graph 2: Drawdown -------------------------#
                         cumulative_returns = (1 + stock_data['Close'].pct_change()).cumprod()
                         rolling_max = cumulative_returns.cummax()
                         drawdown = (cumulative_returns - rolling_max) / rolling_max
@@ -720,106 +731,126 @@ else:
 #               Comparative Performance
 # ========================================================================================================================
 
-# Define default values based on combined_data if not defined
+# Define default values
 if 'combined_data' in globals() and not combined_data.empty:
-    # Use "max" as default period if not defined
     if 'period' not in globals():
         period = "max"
-    # Set start_date and end_date from the combined_data index if not defined
     if 'start_date' not in globals() or start_date is None:
         start_date = combined_data.index.min().strftime('%Y-%m-%d')
     if 'end_date' not in globals() or end_date is None:
         end_date = combined_data.index.max().strftime('%Y-%m-%d')
 
-    # Create a figure with two subplots (stacked vertically)
-    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(16, 14), sharex=True)
+    # Create 2-row subplot figure
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        subplot_titles=("Adjusted Close Prices", "Cumulative Returns"))
 
-    # ------------------------- Subplot 1: Adjusted Close Prices -------------------------
+    # Plot Adjusted Close Prices
     for tick in st.session_state.stock_list:
         close_col = f"Close_{tick}"
         if close_col in combined_data.columns:
             last_price = combined_data[close_col].iloc[-1]
             last_date = combined_data.index[-1]
-            last_price_formatted = f"{last_price:,.2f}"
-            ax1.plot(combined_data.index, combined_data[close_col],
-                     label=f"{tick} Close = {last_price:,.2f}")
-            ax1.scatter(last_date, last_price, color='red', zorder=5)
-            ax1.text(last_date, last_price, f" {last_price_formatted}",
-                     fontsize=9, color='black',
-                     horizontalalignment='left', verticalalignment='bottom',
-                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
+            fig.add_trace(go.Scatter(
+                x=combined_data.index,
+                y=combined_data[close_col],
+                mode='lines',
+                name=f"{tick} Close = {last_price:,.2f}",
+                hovertemplate=f"{tick} Close: {{y:.2f}}<br>Date: {{x}}<extra></extra>"
+            ), row=1, col=1)
 
-    # Set title for Subplot 1 based on provided date range or period
+            fig.add_trace(go.Scatter(
+                x=[last_date],
+                y=[last_price],
+                mode='markers+text',
+                marker=dict(color='red', size=8),
+                text=[f"{last_price:,.2f}"],
+                textposition='top right',
+                showlegend=False
+            ), row=1, col=1)
+
+    # Plot Cumulative Returns
+    for tick in st.session_state.stock_list:
+        cum = f"Cumulative Return_{tick}"
+        if cum in combined_data.columns:
+            final_return = combined_data[cum].iloc[-1] * 100
+            final_date = combined_data.index[-1]
+            fig.add_trace(go.Scatter(
+                x=combined_data.index,
+                y=combined_data[cum] * 100,
+                mode='lines',
+                name=f"{tick} Cumulative Return = {final_return:,.2f}%",
+                hovertemplate=f"{tick} Return: {{y:.2f}}%<br>Date: {{x}}<extra></extra>"
+            ), row=2, col=1)
+
+            fig.add_trace(go.Scatter(
+                x=[final_date],
+                y=[final_return],
+                mode='markers+text',
+                marker=dict(color='red', size=8),
+                text=[f"{final_return:,.2f}%"],
+                textposition='top right',
+                showlegend=False
+            ), row=2, col=1)
+
+    # Format titles
     try:
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
         years_diff = round((end_dt - start_dt).days / 365.25, 0)
-        ax1.set_title(f"Adjusted Close Prices for All Tickers over a {years_diff}-year Period")
+        fig.update_layout(title_text=f"Stock Data Over a {years_diff}-Year Period")
     except Exception:
-        ax1.set_title(f"Adjusted Close Prices for All Tickers over the {period} Period")
+        fig.update_layout(title_text=f"Stock Data Over the {period} Period")
 
-    ax1.set_ylabel("Adjusted Close")
-    ax1.legend(fontsize=14)
-    ax1.grid(True)
+    fig.update_layout(
+        height=800,
+        template="plotly_white",
+        xaxis2=dict(tickformat='%Y-%m-%d'),  # format bottom subplot x-axis
+        hovermode="x unified",
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+    )
 
-    # ------------------------- Subplot 2: Cumulative Returns -------------------------
-    for tick in st.session_state.stock_list:
-        cum = f"Cumulative Return_{tick}"
-        if cum in combined_data.columns:
-            final_return = combined_data[cum].iloc[-1] * 100  # Convert to percentage
-            final_date = combined_data.index[-1]
-            final_return_formatted = f"{final_return:,.2f}"
-            ax2.plot(combined_data.index, combined_data[cum] * 100,
-                     label=f"{tick} Cumulative Return = {final_return:,.2f}%")
-            ax2.scatter(final_date, final_return, color='red', zorder=5)
-            ax2.text(final_date, final_return, f" {final_return_formatted}%",
-                     fontsize=9, color='black',
-                     horizontalalignment='left', verticalalignment='bottom',
-                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
+    st.plotly_chart(fig, use_container_width=True)
 
-    try:
-        ax2.set_title(f"Cumulative Returns Over Time over a {years_diff}-year Period")
-    except Exception:
-        ax2.set_title(f"Cumulative Returns Over Time over the {period} Period")
-
-    ax2.set_xlabel("Date")
-    ax2.set_ylabel("Cumulative Return (%)")
-    ax2.legend(fontsize=14)
-    ax2.grid(True)
-
-    # Format the x-axis to display dates nicely
-    ax2.xaxis.set_major_locator(mdates.AutoDateLocator())
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    plt.xticks(rotation=45)
-
-    plt.tight_layout()
-    st.pyplot(fig)
 else:
     st.write("No combined data available.")
+
 
 # ========================================================================================================================
 #               Correlation Matrix
 # ========================================================================================================================
 
+
 # Ensure combined_data exists and is not empty
 if 'combined_data' in globals() and not combined_data.empty:
-    # Extract only the columns that represent adjusted close prices.
-    # This assumes that the column names for close prices start with "Close_"
     close_columns = [col for col in combined_data.columns if col.startswith("Close_")]
     adj_close_data = combined_data[close_columns]
-
-    # Drop columns that are entirely NaN to avoid errors during correlation calculation
     adj_close_data = adj_close_data.dropna(axis=1, how="all")
 
-    # Compute the correlation matrix
+    # Compute correlation matrix
     correlation_matrix = adj_close_data.corr()
 
-    # Create a figure for the heatmap
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(correlation_matrix, annot=True, cmap="icefire", fmt=".2f", square=True,
-                annot_kws={'size': 10}, cbar_kws={"shrink": 0.8})
-    plt.title("Correlation Matrix of Adjusted Close Prices")
-    plt.tight_layout()
-    st.pyplot(plt.gcf())
+    # Convert to long-form for Plotly
+    corr_long = correlation_matrix.reset_index().melt(id_vars='index')
+    corr_long.columns = ['Stock1', 'Stock2', 'Correlation']
+
+    # Plotly heatmap
+    fig = px.imshow(
+        correlation_matrix.values,
+        x=correlation_matrix.columns,
+        y=correlation_matrix.index,
+        color_continuous_scale='RdBu_r',
+        zmin=-1, zmax=1,
+        labels=dict(x="Stock", y="Stock", color="Correlation"),
+        text_auto=".2f"
+    )
+
+    fig.update_layout(
+        title="Correlation Matrix of Adjusted Close Prices",
+        xaxis_side="bottom",
+        width=800,
+        height=700
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 else:
     st.write("No combined data available for correlation matrix.")
